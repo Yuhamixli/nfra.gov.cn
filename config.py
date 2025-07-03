@@ -14,19 +14,19 @@ DETAIL_URL_TEMPLATE = 'https://www.nfra.gov.cn/cn/view/pages/ItemDetail.html'
 
 # Selenium配置
 SELENIUM_CONFIG = {
-    'implicit_wait': 10,  # 隐式等待时间
-    'page_load_timeout': 30,  # 页面加载超时
+    'implicit_wait': 5,  # 减少隐式等待时间从10到5秒
+    'page_load_timeout': 20,  # 减少页面加载超时从30到20秒
     'window_size': (1920, 1080),  # 浏览器窗口大小
-    'headless': False,  # 关闭无头模式，方便观察页面加载
+    'headless': True,  # 启用无头模式，提升性能
 }
 
 # 爬取配置
 CRAWL_CONFIG = {
-    'delay_between_requests': 2,  # 请求间隔（秒）
-    'delay_between_pages': 3,     # 翻页间隔（秒）
-    'delay_between_categories': 5, # 分类间隔（秒）
+    'delay_between_requests': 1,  # 减少请求间隔从2到1秒
+    'delay_between_pages': 1.5,   # 减少翻页间隔从3到1.5秒
+    'delay_between_categories': 2, # 减少分类间隔从5到2秒
     'max_retries': 3,  # 最大重试次数
-    'timeout': 30,  # 请求超时时间
+    'timeout': 15,  # 减少请求超时时间从30到15秒
     'default_max_pages': 5,  # 默认最大页数
     'test_max_pages': 1,     # 测试模式最大页数
     'scheduled_max_pages': 10, # 定时任务最大页数
@@ -50,7 +50,7 @@ RUN_MODES = {
         'target_year': 2025
     },
     'monthly': {
-        'max_pages_per_category': 10,  # 月度更新最大页数（减少页数）
+        'max_pages_per_category': 15,  # 月度更新最大页数（增加到15页）
         'max_records_per_category': None,
         'description': '月度更新 - 获取上个月发布的数据',
         'update_master': True,

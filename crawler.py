@@ -131,16 +131,16 @@ class NFRACrawler:
             # 创建driver实例
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
-            # 配置页面加载和脚本超时
-            self.driver.set_page_load_timeout(60)  # 增加到60秒
-            self.driver.implicitly_wait(15)  # 增加到15秒
-            self.driver.set_script_timeout(60)  # 脚本执行超时
+            # 优化后的超时配置
+            self.driver.set_page_load_timeout(SELENIUM_CONFIG['page_load_timeout'])  # 使用配置中的20秒
+            self.driver.implicitly_wait(SELENIUM_CONFIG['implicit_wait'])  # 使用配置中的5秒
+            self.driver.set_script_timeout(30)  # 减少脚本执行超时到30秒
             
             # 隐藏WebDriver特征
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             
-            # 初始化WebDriverWait
-            self.wait = WebDriverWait(self.driver, 45)  # 增加等待时间
+            # 减少WebDriverWait等待时间
+            self.wait = WebDriverWait(self.driver, 20)  # 从45秒减少到20秒
             
             self.logger.info("Chrome WebDriver 初始化成功")
             return True
@@ -169,8 +169,8 @@ class NFRACrawler:
                 # 等待页面完全加载完成 - 和debug_test.py保持一致
                 self.wait.until(lambda driver: driver.execute_script("return document.readyState") == "complete")
                 
-                # 额外等待时间让内容加载
-                time.sleep(random.uniform(2, 4))
+                # 减少额外等待时间，使用随机数避免被检测
+                time.sleep(random.uniform(0.5, 1.5))  # 从2-4秒减少到0.5-1.5秒
                 
                 self.logger.info("页面加载成功")
                 return True
@@ -178,13 +178,13 @@ class NFRACrawler:
             except TimeoutException:
                 self.logger.warning(f"页面加载超时 (尝试 {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
-                    # 等待后重试
-                    time.sleep(random.uniform(3, 6))
+                    # 减少重试等待时间
+                    time.sleep(random.uniform(1, 2))  # 从3-6秒减少到1-2秒
                     continue
             except Exception as e:
                 self.logger.error(f"页面加载失败: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(random.uniform(3, 6))
+                    time.sleep(random.uniform(1, 2))  # 从3-6秒减少到1-2秒
                     continue
         
         self.logger.error(f"无法加载 {url} 页面")
@@ -228,7 +228,7 @@ class NFRACrawler:
             self.logger.warning(f"获取页面发布时间失败: {e}")
             return []
 
-    def get_punishment_list_smart(self, category: str, target_year: int = None, target_month: int = None, max_pages: int = 10) -> List[Dict]:
+    def get_punishment_list_smart(self, category: str, target_year: int = None, target_month: int = None, max_pages: int = 10, use_smart_check: bool = False) -> List[Dict]:
         """智能获取处罚信息列表 - 支持按月份过滤"""
         url = BASE_URLS.get(category)
         if not url:
@@ -244,19 +244,24 @@ class NFRACrawler:
         found_target_month = False
         previous_page_latest_date = None  # 记录前一页的最新日期
         
-        # 如果指定了目标年月，使用智能检查
-        use_smart_check = target_year is not None and target_month is not None
-        if use_smart_check:
-            self.logger.info(f"启用智能月份检查: {target_year}年{target_month}月")
+        # 如果启用智能检查
+        if use_smart_check and target_year is not None and target_month is not None:
+            self.logger.info(f"启用智能精确日期过滤: {target_year}年{target_month}月")
             target_month_str = f"{target_year}-{target_month:02d}"
+            # 构建精确的日期范围
+            from datetime import datetime
+            target_start = datetime(target_year, target_month, 1)
+            target_end = datetime(target_year, target_month + 1, 1) if target_month < 12 else datetime(target_year + 1, 1, 1)
+        else:
+            use_smart_check = False
         
         try:
             while current_page <= max_pages:
                 self.logger.info(f"正在解析 {category} 第 {current_page} 页")
                 
-                # 等待页面加载完成
+                # 等待页面加载完成，优化等待时间
                 self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                time.sleep(2)  # 额外等待确保内容加载
+                time.sleep(0.5)  # 减少额外等待时间从2秒到0.5秒
                 
                 # 智能检查：如果指定了目标月份，先检查当前页面是否包含目标月份的数据
                 if use_smart_check:
@@ -312,7 +317,7 @@ class NFRACrawler:
                                     if next_button.is_enabled():
                                         self.driver.execute_script("arguments[0].click();", next_button)
                                         current_page += 1
-                                        time.sleep(3)
+                                        time.sleep(1.5)  # 减少翻页等待时间从3秒到1.5秒
                                         continue
                                     else:
                                         self.logger.info("已到达最后一页")
@@ -326,7 +331,7 @@ class NFRACrawler:
                         else:
                             break
                 
-                # 解析当前页面的处罚信息
+                # 解析当前页面的处罚信息（使用统一的智能处理逻辑）
                 try:
                     # 查找包含"行政处罚信息公开表"的链接
                     punishment_links = self.driver.find_elements(
@@ -342,33 +347,95 @@ class NFRACrawler:
                         )
                     
                     page_punishment_list = []
-                    for link in punishment_links:
-                        try:
-                            href = link.get_attribute('href')
-                            title = clean_text(link.text)
-                            
-                            if href and title:
-                                # 构建完整URL
-                                if not href.startswith('http'):
-                                    href = urllib.parse.urljoin('https://www.nfra.gov.cn', href)
-                                
-                                punishment_info = {
-                                    'title': title,
-                                    'detail_url': href,
-                                    'category': category,
-                                    'page': current_page
-                                }
-                                page_punishment_list.append(punishment_info)
-                                
-                        except Exception as e:
-                            self.logger.warning(f"解析链接失败: {e}")
-                            continue
+                    should_stop_pagination = False  # 标志是否应该停止翻页
                     
-                    self.logger.info(f"第 {current_page} 页找到 {len(page_punishment_list)} 条处罚信息")
+                    if use_smart_check:
+                        # 启用智能日期过滤（利用倒序特性优化）
+                        for i, link in enumerate(punishment_links):
+                            try:
+                                href = link.get_attribute('href')
+                                title = clean_text(link.text)
+                                
+                                if href and title:
+                                    # 获取该链接对应的发布时间
+                                    link_publish_date = self.get_link_publish_date(link)
+                                    
+                                    self.logger.debug(f"检查第{i+1}条记录: {title[:50]}... -> 日期: {link_publish_date}")
+                                    
+                                    # 检查日期是否在目标月份范围内
+                                    if link_publish_date:
+                                        try:
+                                            link_date = datetime.strptime(link_publish_date, '%Y-%m-%d')
+                                            
+                                            if target_start <= link_date < target_end:
+                                                # 在目标范围内，添加到结果
+                                                href_full = href if href.startswith('http') else urllib.parse.urljoin('https://www.nfra.gov.cn', href)
+                                                punishment_info = {
+                                                    'title': title,
+                                                    'detail_url': href_full,
+                                                    'category': category,
+                                                    'page': current_page,
+                                                    'publish_date': link_publish_date
+                                                }
+                                                page_punishment_list.append(punishment_info)
+                                                found_target_month = True
+                                                self.logger.debug(f"✓ 在目标范围内: {link_publish_date}")
+                                            elif link_date < target_start:
+                                                # 早于目标月份，由于页面是倒序的，后续记录都会更早
+                                                self.logger.info(f"✗ 遇到早于目标月份的记录 ({link_publish_date})，后续都会更早，停止处理")
+                                                should_stop_pagination = True  # 设置停止翻页标志
+                                                break
+                                            else:
+                                                # 晚于目标月份，继续检查
+                                                self.logger.debug(f"○ 晚于目标月份，继续检查: {link_publish_date}")
+                                        except ValueError as e:
+                                            self.logger.debug(f"日期解析失败: {link_publish_date}, {e}")
+                                    else:
+                                        self.logger.debug("无法提取日期，跳过该记录")
+                                        
+                            except Exception as e:
+                                self.logger.warning(f"处理第{i+1}条链接失败: {e}")
+                                continue
+                        
+                        total_links = len(punishment_links)
+                        filtered_count = len(page_punishment_list)
+                        self.logger.info(f"第 {current_page} 页找到 {filtered_count} 条目标月份记录 (共{total_links}条)")
+                        
+                        # 如果遇到了早于目标月份的记录，停止翻页
+                        if should_stop_pagination:
+                            self.logger.info(f"第 {current_page} 页已遇到超出时间期限的内容，无需继续翻页")
+                            all_punishment_list.extend(page_punishment_list)
+                            break
+                    else:
+                        # 原有逻辑：处理所有链接
+                        for link in punishment_links:
+                            try:
+                                href = link.get_attribute('href')
+                                title = clean_text(link.text)
+                                
+                                if href and title:
+                                    # 构建完整URL
+                                    if not href.startswith('http'):
+                                        href = urllib.parse.urljoin('https://www.nfra.gov.cn', href)
+                                    
+                                    punishment_info = {
+                                        'title': title,
+                                        'detail_url': href,
+                                        'category': category,
+                                        'page': current_page
+                                    }
+                                    page_punishment_list.append(punishment_info)
+                                    
+                            except Exception as e:
+                                self.logger.warning(f"解析链接失败: {e}")
+                                continue
+                        
+                        self.logger.info(f"第 {current_page} 页找到 {len(page_punishment_list)} 条处罚信息")
+                    
                     all_punishment_list.extend(page_punishment_list)
                     
-                    # 检查是否有下一页
-                    if current_page < max_pages:
+                    # 检查是否有下一页（只有在没有设置停止标志时才继续翻页）
+                    if not should_stop_pagination and current_page < max_pages:
                         try:
                             # 查找下一页按钮
                             next_buttons = self.driver.find_elements(
@@ -382,7 +449,7 @@ class NFRACrawler:
                                 if next_button.is_enabled():
                                     self.driver.execute_script("arguments[0].click();", next_button)
                                     current_page += 1
-                                    time.sleep(3)  # 等待页面跳转
+                                    time.sleep(1.5)  # 减少翻页等待时间从3秒到1.5秒
                                 else:
                                     self.logger.info("已到达最后一页")
                                     break
@@ -429,9 +496,9 @@ class NFRACrawler:
             while current_page <= max_pages:
                 self.logger.info(f"正在解析 {category} 第 {current_page} 页")
                 
-                # 等待页面加载完成
+                # 等待页面加载完成，优化等待时间
                 self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                time.sleep(2)  # 额外等待确保内容加载
+                time.sleep(0.5)  # 减少额外等待时间从2秒到0.5秒
                 
                 # 查找包含"行政处罚信息公开表"的链接
                 try:
@@ -449,29 +516,84 @@ class NFRACrawler:
                         )
                     
                     page_punishment_list = []
-                    for link in punishment_links:
-                        try:
-                            href = link.get_attribute('href')
-                            title = clean_text(link.text)
-                            
-                            if href and title:
-                                # 构建完整URL
-                                if not href.startswith('http'):
-                                    href = urllib.parse.urljoin('https://www.nfra.gov.cn', href)
-                                
-                                punishment_info = {
-                                    'title': title,
-                                    'detail_url': href,
-                                    'category': category,
-                                    'page': current_page
-                                }
-                                page_punishment_list.append(punishment_info)
-                                
-                        except Exception as e:
-                            self.logger.warning(f"解析链接失败: {e}")
-                            continue
                     
-                    self.logger.info(f"第 {current_page} 页找到 {len(page_punishment_list)} 条处罚信息")
+                    if use_smart_check:
+                        # 对每个链接检查其对应的发布日期（利用倒序特性优化）
+                        target_date_found = False
+                        for i, link in enumerate(punishment_links):
+                            try:
+                                href = link.get_attribute('href')
+                                title = clean_text(link.text)
+                                
+                                if href and title:
+                                    # 获取该链接对应的发布时间
+                                    link_publish_date = self.get_link_publish_date(link)
+                                    
+                                    self.logger.debug(f"检查第{i+1}条记录: {title[:50]}... -> 日期: {link_publish_date}")
+                                    
+                                    # 检查日期是否在目标月份范围内
+                                    if link_publish_date:
+                                        try:
+                                            link_date = datetime.strptime(link_publish_date, '%Y-%m-%d')
+                                            
+                                            if target_start <= link_date < target_end:
+                                                # 在目标范围内，添加到结果
+                                                href_full = href if href.startswith('http') else urllib.parse.urljoin('https://www.nfra.gov.cn', href)
+                                                punishment_info = {
+                                                    'title': title,
+                                                    'detail_url': href_full,
+                                                    'category': category,
+                                                    'page': current_page,
+                                                    'publish_date': link_publish_date
+                                                }
+                                                page_punishment_list.append(punishment_info)
+                                                target_date_found = True
+                                                self.logger.debug(f"✓ 在目标范围内: {link_publish_date}")
+                                            elif link_date < target_start:
+                                                # 早于目标月份，由于页面是倒序的，后续记录都会更早，可以停止检查
+                                                self.logger.debug(f"✗ 早于目标月份，后续都会更早，停止检查: {link_publish_date}")
+                                                break
+                                            else:
+                                                # 晚于目标月份，继续检查
+                                                self.logger.debug(f"○ 晚于目标月份，继续检查: {link_publish_date}")
+                                        except ValueError as e:
+                                            self.logger.debug(f"日期解析失败: {link_publish_date}, {e}")
+                                    else:
+                                        self.logger.debug("无法提取日期，跳过该记录")
+                                        
+                            except Exception as e:
+                                self.logger.warning(f"处理第{i+1}条链接失败: {e}")
+                                continue
+                    else:
+                        # 原有逻辑：处理所有链接
+                        for link in punishment_links:
+                            try:
+                                href = link.get_attribute('href')
+                                title = clean_text(link.text)
+                                
+                                if href and title:
+                                    # 构建完整URL
+                                    if not href.startswith('http'):
+                                        href = urllib.parse.urljoin('https://www.nfra.gov.cn', href)
+                                    
+                                    punishment_info = {
+                                        'title': title,
+                                        'detail_url': href,
+                                        'category': category,
+                                        'page': current_page
+                                    }
+                                    page_punishment_list.append(punishment_info)
+                                    
+                            except Exception as e:
+                                self.logger.warning(f"解析链接失败: {e}")
+                                continue
+                    
+                    if use_smart_check:
+                        total_links = len(punishment_links)
+                        filtered_count = len(page_punishment_list)
+                        self.logger.info(f"第 {current_page} 页找到 {filtered_count} 条目标月份记录 (共{total_links}条)")
+                    else:
+                        self.logger.info(f"第 {current_page} 页找到 {len(page_punishment_list)} 条处罚信息")
                     all_punishment_list.extend(page_punishment_list)
                     
                     # 检查是否有下一页
@@ -489,7 +611,7 @@ class NFRACrawler:
                                 if next_button.is_enabled():
                                     self.driver.execute_script("arguments[0].click();", next_button)
                                     current_page += 1
-                                    time.sleep(3)  # 等待页面跳转
+                                    time.sleep(1.5)  # 减少翻页等待时间从3秒到1.5秒
                                 else:
                                     self.logger.info("已到达最后一页")
                                     break
@@ -1277,7 +1399,7 @@ class NFRACrawler:
             self.logger.error(f"解析表格失败: {e}")
             return {}
     
-    def crawl_category_smart(self, category: str, target_year: int = None, target_month: int = None, max_pages: int = 10, max_records: int = None) -> List[Dict]:
+    def crawl_category_smart(self, category: str, target_year: int = None, target_month: int = None, max_pages: int = 10, max_records: int = None, use_smart_check: bool = False) -> List[Dict]:
         """智能爬取指定类别的处罚信息 - 支持按月份过滤"""
         self.logger.info(f"开始智能爬取 {category} 处罚信息")
         
@@ -1285,7 +1407,7 @@ class NFRACrawler:
             self.logger.info(f"目标月份: {target_year}年{target_month}月")
         
         # 使用智能方法获取处罚列表
-        punishment_list = self.get_punishment_list_smart(category, target_year, target_month, max_pages)
+        punishment_list = self.get_punishment_list_smart(category, target_year, target_month, max_pages, use_smart_check)
         
         if not punishment_list:
             self.logger.warning(f"{category} 没有找到处罚信息")
@@ -1382,7 +1504,7 @@ class NFRACrawler:
         self.logger.info(f"{category} 处罚信息爬取完成，共获得 {len(detailed_data)} 条详细记录")
         return detailed_data
     
-    def crawl_all_smart(self, target_year: int = None, target_month: int = None, max_pages_per_category: int = 10, max_records_per_category: int = None) -> Dict[str, List[Dict]]:
+    def crawl_all_smart(self, target_year: int = None, target_month: int = None, max_pages_per_category: int = 10, max_records_per_category: int = None, use_smart_check: bool = False) -> Dict[str, List[Dict]]:
         """智能爬取所有类别的处罚信息 - 支持按月份过滤"""
         if not self.setup_driver():
             self.logger.error("无法初始化WebDriver，爬取失败")
@@ -1404,7 +1526,8 @@ class NFRACrawler:
                     target_year, 
                     target_month, 
                     max_pages_per_category, 
-                    max_records_per_category
+                    max_records_per_category,
+                    use_smart_check
                 )
                 
                 all_data[category] = category_data
@@ -1632,9 +1755,9 @@ class NFRACrawler:
             while current_page <= max_pages:
                 self.logger.info(f"正在解析 {category} 第 {current_page} 页")
                 
-                # 等待页面加载完成
+                # 等待页面加载完成，优化等待时间
                 self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                time.sleep(2)
+                time.sleep(0.5)  # 减少额外等待时间从2秒到0.5秒
                 
                 # 智能检查：获取当前页面的发布时间
                 publish_dates = self.get_page_publish_dates()
@@ -1695,7 +1818,7 @@ class NFRACrawler:
                                 if next_button.is_enabled():
                                     self.driver.execute_script("arguments[0].click();", next_button)
                                     current_page += 1
-                                    time.sleep(3)
+                                    time.sleep(1.5)  # 减少翻页等待时间从3秒到1.5秒
                                     continue
                                 else:
                                     self.logger.info("已到达最后一页")
@@ -1765,7 +1888,7 @@ class NFRACrawler:
                                 if next_button.is_enabled():
                                     self.driver.execute_script("arguments[0].click();", next_button)
                                     current_page += 1
-                                    time.sleep(3)  # 等待页面跳转
+                                    time.sleep(1.5)  # 减少翻页等待时间从3秒到1.5秒
                                 else:
                                     self.logger.info("已到达最后一页")
                                     break
@@ -1915,9 +2038,9 @@ class NFRACrawler:
             while current_page <= max_pages:
                 self.logger.info(f"正在解析 {category} 第 {current_page} 页")
                 
-                # 等待页面加载完成
+                # 等待页面加载完成，优化等待时间
                 self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                time.sleep(2)
+                time.sleep(0.5)  # 减少额外等待时间从2秒到0.5秒
                 
                 # 智能检查：获取当前页面的发布时间
                 publish_dates = self.get_page_publish_dates()
@@ -1946,8 +2069,9 @@ class NFRACrawler:
                                 '//a[contains(@href, "ItemDetail")]'
                             )
                         
-                        # 对每个链接检查其对应的发布日期
-                        for link in punishment_links:
+                        # 对每个链接检查其对应的发布日期（利用倒序特性优化）
+                        target_date_found = False
+                        for i, link in enumerate(punishment_links):
                             try:
                                 href = link.get_attribute('href')
                                 title = clean_text(link.text)
@@ -1956,26 +2080,56 @@ class NFRACrawler:
                                     # 获取该链接对应的发布时间
                                     link_publish_date = self.get_link_publish_date(link)
                                     
-                                    # 只处理目标日期的记录
-                                    if link_publish_date and link_publish_date.startswith(target_date_str):
-                                        # 构建完整URL
-                                        if not href.startswith('http'):
-                                            href = urllib.parse.urljoin('https://www.nfra.gov.cn', href)
-                                        
-                                        punishment_info = {
-                                            'title': title,
-                                            'detail_url': href,
-                                            'category': category,
-                                            'page': current_page,
-                                            'publish_date': link_publish_date
-                                        }
-                                        page_punishment_list.append(punishment_info)
-                                        self.logger.debug(f"找到目标日期记录: {title} ({link_publish_date})")
+                                    self.logger.debug(f"检查第{i+1}条记录: {title[:50]}... -> 日期: {link_publish_date}")
+                                    
+                                    # 检查日期是否在目标月份范围内
+                                    if link_publish_date:
+                                        # 解析日期
+                                        try:
+                                            from datetime import datetime
+                                            link_date = datetime.strptime(link_publish_date, '%Y-%m-%d')
+                                            target_start = datetime(target_year, target_month, 1)
+                                            
+                                            # 计算目标月份的结束日期
+                                            if target_month == 12:
+                                                target_end = datetime(target_year + 1, 1, 1)
+                                            else:
+                                                target_end = datetime(target_year, target_month + 1, 1)
+                                            
+                                            if target_start <= link_date < target_end:
+                                                # 在目标月份范围内
+                                                target_date_found = True
+                                                
+                                                # 构建完整URL
+                                                if not href.startswith('http'):
+                                                    href = urllib.parse.urljoin('https://www.nfra.gov.cn', href)
+                                                
+                                                punishment_info = {
+                                                    'title': title,
+                                                    'detail_url': href,
+                                                    'category': category,
+                                                    'page': current_page,
+                                                    'publish_date': link_publish_date
+                                                }
+                                                page_punishment_list.append(punishment_info)
+                                                self.logger.info(f"✓ 找到目标记录: {title[:30]}... ({link_publish_date})")
+                                                
+                                            elif link_date < target_start:
+                                                # 日期早于目标月份，由于是倒序排列，后面的都会更早
+                                                self.logger.info(f"✗ 发现早于目标月份的记录: {link_publish_date}，由于倒序排列，停止检查剩余 {len(punishment_links)-i-1} 条记录")
+                                                break
+                                            else:
+                                                # 日期晚于目标月份，继续检查下一条
+                                                self.logger.debug(f"○ 跳过晚于目标月份的记录: {link_publish_date}")
+                                                
+                                        except ValueError as e:
+                                            self.logger.warning(f"日期解析失败: {link_publish_date} - {e}")
+                                            continue
                                     else:
-                                        self.logger.debug(f"跳过非目标日期记录: {title} ({link_publish_date})")
+                                        self.logger.debug(f"无法获取记录日期: {title[:30]}...")
                                         
                             except Exception as e:
-                                self.logger.warning(f"解析链接失败: {e}")
+                                self.logger.warning(f"解析第{i+1}条链接失败: {e}")
                                 continue
                         
                         target_date_count = len(page_punishment_list)
@@ -2013,7 +2167,7 @@ class NFRACrawler:
                             if next_button.is_enabled():
                                 self.driver.execute_script("arguments[0].click();", next_button)
                                 current_page += 1
-                                time.sleep(3)
+                                time.sleep(1.5)  # 减少翻页等待时间从3秒到1.5秒
                                 continue
                             else:
                                 self.logger.info("已到达最后一页")
@@ -2039,71 +2193,289 @@ class NFRACrawler:
             return all_punishment_list
 
     def get_link_publish_date(self, link_element) -> str:
-        """获取链接对应的发布日期"""
+        """获取链接对应的发布日期（优化版）"""
         try:
-            # 方法1：查找链接所在行的时间信息
-            # 向上查找父元素，寻找包含日期的元素
-            parent = link_element
-            for _ in range(5):  # 最多向上查找5层
-                try:
-                    parent = parent.find_element(By.XPATH, "..")
-                    # 在父元素中查找包含日期的文本
-                    date_elements = parent.find_elements(
-                        By.XPATH, 
-                        './/*[contains(text(), "2024") or contains(text(), "2025")]'
-                    )
-                    
-                    for date_elem in date_elements:
-                        text = clean_text(date_elem.text)
-                        # 使用正则表达式匹配日期格式
-                        import re
-                        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
-                        if date_match:
-                            found_date = date_match.group(1)
-                            self.logger.debug(f"找到链接发布日期: {found_date}")
-                            return found_date
-                except:
-                    continue
+            import re
             
-            # 方法2：查找链接同行的时间信息
+            # 方法1：从表格行中查找日期（最可靠的方法）
             try:
-                # 查找同一行的时间元素
+                # 查找包含链接的表格行
                 row_element = link_element.find_element(By.XPATH, "./ancestor::tr[1]")
-                date_cells = row_element.find_elements(
-                    By.XPATH, 
-                    './/td[contains(text(), "2024") or contains(text(), "2025")]'
-                )
                 
-                for cell in date_cells:
-                    text = clean_text(cell.text)
-                    import re
-                    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
+                # 获取该行所有单元格
+                cells = row_element.find_elements(By.TAG_NAME, "td")
+                
+                # 在每个单元格中查找日期
+                for cell in cells:
+                    cell_text = clean_text(cell.text)
+                    # 匹配 YYYY-MM-DD 格式的日期
+                    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', cell_text)
                     if date_match:
                         found_date = date_match.group(1)
-                        self.logger.debug(f"从表格行找到发布日期: {found_date}")
+                        self.logger.debug(f"从表格单元格找到日期: {found_date}")
                         return found_date
-            except:
-                pass
-            
-            # 方法3：检查链接后面紧邻的文本
-            try:
-                next_sibling = link_element.find_element(By.XPATH, "./following-sibling::*[1]")
-                text = clean_text(next_sibling.text)
-                import re
-                date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
+                
+                # 如果单元格中没找到，查找整行的文本
+                row_text = clean_text(row_element.text)
+                date_match = re.search(r'(\d{4}-\d{2}-\d{2})', row_text)
                 if date_match:
                     found_date = date_match.group(1)
-                    self.logger.debug(f"从相邻元素找到发布日期: {found_date}")
+                    self.logger.debug(f"从表格行文本找到日期: {found_date}")
                     return found_date
-            except:
-                pass
+                    
+            except Exception as e:
+                self.logger.debug(f"表格行查找失败: {e}")
             
-            self.logger.debug("未能获取链接的发布日期")
+            # 方法2：查找链接周围的日期信息
+            try:
+                # 向上查找父容器中的日期
+                for level in range(1, 6):  # 向上查找5层
+                    parent = link_element
+                    for _ in range(level):
+                        parent = parent.find_element(By.XPATH, "..")
+                    
+                    # 在父容器中查找日期
+                    parent_text = clean_text(parent.text)
+                    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', parent_text)
+                    if date_match:
+                        found_date = date_match.group(1)
+                        self.logger.debug(f"从第{level}层父元素找到日期: {found_date}")
+                        return found_date
+                        
+            except Exception as e:
+                self.logger.debug(f"父元素查找失败: {e}")
+            
+            # 方法3：查找相邻元素中的日期
+            try:
+                # 查找前后相邻的元素
+                for xpath in ["./following-sibling::*[1]", "./preceding-sibling::*[1]"]:
+                    sibling = link_element.find_element(By.XPATH, xpath)
+                    sibling_text = clean_text(sibling.text)
+                    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', sibling_text)
+                    if date_match:
+                        found_date = date_match.group(1)
+                        self.logger.debug(f"从相邻元素找到日期: {found_date}")
+                        return found_date
+                        
+            except Exception as e:
+                self.logger.debug(f"相邻元素查找失败: {e}")
+            
+            # 方法4：从页面全局日期列表中匹配（最后的备用方法）
+            try:
+                all_dates = self.get_page_publish_dates()
+                if all_dates:
+                    # 假设链接顺序与日期顺序对应
+                    all_links = self.driver.find_elements(
+                        By.XPATH, 
+                        '//a[contains(@href, "ItemDetail")]'
+                    )
+                    
+                    # 找到当前链接在列表中的位置
+                    link_index = -1
+                    for i, link in enumerate(all_links):
+                        if link == link_element:
+                            link_index = i
+                            break
+                    
+                    if 0 <= link_index < len(all_dates):
+                        found_date = all_dates[link_index]
+                        self.logger.debug(f"从页面日期列表匹配到日期: {found_date}")
+                        return found_date
+                        
+            except Exception as e:
+                self.logger.debug(f"页面日期列表匹配失败: {e}")
+            
+            self.logger.debug("所有方法都未能获取链接的发布日期")
             return ""
             
         except Exception as e:
             self.logger.warning(f"获取链接发布日期失败: {e}")
             return ""
+
+    def crawl_selected_categories(self, categories: List[str], max_pages_per_category: int = 5, max_records_per_category: int = None) -> Dict[str, List[Dict]]:
+        """爬取指定类别的处罚信息"""
+        if not self.setup_driver():
+            self.logger.error("无法初始化WebDriver，爬取失败")
+            return {}
+        
+        all_data = {}
+        
+        try:
+            for category in categories:
+                if category not in BASE_URLS:
+                    self.logger.warning(f"跳过未知类别: {category}")
+                    continue
+                    
+                self.logger.info(f"开始爬取 {category}")
+                category_data = self.crawl_category(category, max_pages_per_category, max_records_per_category)
+                all_data[category] = category_data
+                
+                # 类别间延迟
+                time.sleep(CRAWL_CONFIG['delay_between_requests'] * 2)
+            
+            self.logger.info("指定类别爬取完成")
+            
+        except Exception as e:
+            self.logger.error(f"爬取过程中发生错误: {e}")
+        finally:
+            self.close_driver()
+        
+        return all_data
+
+    def crawl_selected_categories_by_month(self, categories: List[str], target_year: int, target_month: int, max_pages_per_category: int = 10, max_records_per_category: int = None, use_smart_check: bool = False) -> Dict[str, List[Dict]]:
+        """智能爬取指定类别指定月份的所有处罚信息"""
+        if not self.setup_driver():
+            self.logger.error("无法初始化WebDriver，爬取失败")
+            return {}
+        
+        all_data = {}
+        
+        self.logger.info(f"启用智能月份爬取模式，目标: {target_year}年{target_month}月")
+        self.logger.info(f"爬取类别: {', '.join(categories)}")
+        
+        try:
+            for category in categories:
+                if category not in BASE_URLS:
+                    self.logger.warning(f"跳过未知类别: {category}")
+                    continue
+                    
+                self.logger.info(f"开始智能爬取 {category} - {target_year}年{target_month}月数据")
+                
+                # 使用智能方法爬取指定月份
+                category_data = self.crawl_category_smart(
+                    category, 
+                    target_year, 
+                    target_month, 
+                    max_pages_per_category, 
+                    max_records_per_category,
+                    use_smart_check
+                )
+                
+                all_data[category] = category_data
+                
+                # 记录这个分类的结果
+                if category_data:
+                    self.logger.info(f"{category} 完成，获得 {len(category_data)} 条{target_year}年{target_month}月记录")
+                else:
+                    self.logger.info(f"{category} 完成，未找到{target_year}年{target_month}月的数据")
+                
+                # 类别间延迟
+                time.sleep(CRAWL_CONFIG['delay_between_requests'] * 2)
+            
+            # 统计总结果
+            total_records = sum(len(records) for records in all_data.values())
+            if target_year and target_month:
+                self.logger.info(f"智能爬取完成，{target_year}年{target_month}月共获得 {total_records} 条记录")
+            else:
+                self.logger.info(f"爬取完成，共获得 {total_records} 条记录")
+            
+        except Exception as e:
+            self.logger.error(f"爬取过程中发生错误: {e}")
+        finally:
+            self.close_driver()
+        
+        return all_data
+
+    def crawl_selected_categories_by_year(self, categories: List[str], target_year: int, max_pages_per_category: int = 50, max_records_per_category: int = None) -> Dict[str, List[Dict]]:
+        """智能爬取指定类别指定年份的所有处罚信息"""
+        if not self.setup_driver():
+            self.logger.error("无法初始化WebDriver，爬取失败")
+            return {}
+        
+        all_data = {}
+        
+        self.logger.info(f"启用智能年份爬取模式，目标年份: {target_year}")
+        self.logger.info(f"爬取类别: {', '.join(categories)}")
+        
+        try:
+            for category in categories:
+                if category not in BASE_URLS:
+                    self.logger.warning(f"跳过未知类别: {category}")
+                    continue
+                    
+                self.logger.info(f"开始智能爬取 {category} - {target_year}年数据")
+                
+                # 使用智能方法爬取指定年份
+                category_data = self.crawl_category_smart_by_year(
+                    category, 
+                    target_year, 
+                    max_pages_per_category, 
+                    max_records_per_category
+                )
+                
+                all_data[category] = category_data
+                
+                # 记录这个分类的结果
+                if category_data:
+                    self.logger.info(f"{category} 完成，获得 {len(category_data)} 条{target_year}年记录")
+                else:
+                    self.logger.info(f"{category} 完成，未找到{target_year}年的数据")
+                
+                # 类别间延迟
+                time.sleep(CRAWL_CONFIG['delay_between_requests'] * 2)
+            
+            # 统计总结果
+            total_records = sum(len(records) for records in all_data.values())
+            self.logger.info(f"智能年份爬取完成，{target_year}年共获得 {total_records} 条记录")
+            
+        except Exception as e:
+            self.logger.error(f"爬取过程中发生错误: {e}")
+        finally:
+            self.close_driver()
+        
+        return all_data
+
+    def crawl_selected_categories_by_date(self, categories: List[str], target_year: int, target_month: int, target_day: int, max_pages_per_category: int = 3, max_records_per_category: int = None) -> Dict[str, List[Dict]]:
+        """智能爬取指定类别指定日期的所有处罚信息"""
+        if not self.setup_driver():
+            self.logger.error("无法初始化WebDriver，爬取失败")
+            return {}
+        
+        all_data = {}
+        target_date_str = f"{target_year}-{target_month:02d}-{target_day:02d}"
+        
+        self.logger.info(f"启用智能日期爬取模式，目标日期: {target_date_str}")
+        self.logger.info(f"爬取类别: {', '.join(categories)}")
+        
+        try:
+            for category in categories:
+                if category not in BASE_URLS:
+                    self.logger.warning(f"跳过未知类别: {category}")
+                    continue
+                    
+                self.logger.info(f"开始智能爬取 {category} - {target_date_str}数据")
+                
+                # 使用智能方法爬取指定日期
+                category_data = self.crawl_category_smart_by_date(
+                    category, 
+                    target_year, 
+                    target_month, 
+                    target_day,
+                    max_pages_per_category, 
+                    max_records_per_category
+                )
+                
+                all_data[category] = category_data
+                
+                # 记录这个分类的结果
+                if category_data:
+                    self.logger.info(f"{category} 完成，获得 {len(category_data)} 条{target_date_str}记录")
+                else:
+                    self.logger.info(f"{category} 完成，未找到{target_date_str}的数据")
+                
+                # 类别间延迟
+                time.sleep(CRAWL_CONFIG['delay_between_requests'] * 2)
+            
+            # 统计总结果
+            total_records = sum(len(records) for records in all_data.values())
+            self.logger.info(f"智能日期爬取完成，{target_date_str}共获得 {total_records} 条记录")
+            
+        except Exception as e:
+            self.logger.error(f"智能日期爬取过程中发生错误: {e}")
+        finally:
+            self.close_driver()
+        
+        return all_data
 
 
 if __name__ == "__main__":
