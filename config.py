@@ -20,6 +20,15 @@ SELENIUM_CONFIG = {
     'headless': True,  # 启用无头模式，提升性能
 }
 
+# WebDriver配置
+WEBDRIVER_CONFIG = {
+    'local_driver_dir': 'drivers',  # 本地driver存储目录
+    'driver_filename': 'chromedriver.exe',  # driver文件名
+    'use_local_driver': True,  # 优先使用本地driver
+    'auto_download': True,  # 自动下载driver（如果本地不存在）
+    'cache_valid_days': 7,  # driver缓存有效期（天）
+}
+
 # 爬取配置
 CRAWL_CONFIG = {
     'delay_between_requests': 1,  # 减少请求间隔从2到1秒

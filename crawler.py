@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import random
 
-from config import BASE_URLS, SELENIUM_CONFIG, CRAWL_CONFIG
+from config import BASE_URLS, SELENIUM_CONFIG, CRAWL_CONFIG, WEBDRIVER_CONFIG
 from utils import setup_logging, clean_text, format_date, get_current_timestamp
 
 
@@ -34,40 +34,96 @@ class NFRACrawler:
         self.driver_path = None  # 缓存driver路径
         
     def _get_driver_path(self):
-        """获取或缓存ChromeDriver路径"""
+        """获取ChromeDriver路径 - 优先使用本地driver"""
+        # 如果已经缓存了有效的driver路径，直接使用
         if self.driver_path and os.path.exists(self.driver_path):
-            self.logger.info(f"使用缓存的ChromeDriver: {self.driver_path}")
+            self.logger.info(f"使用已缓存的ChromeDriver: {self.driver_path}")
             return self.driver_path
         
+        # 1. 优先检查本地drivers目录
+        if WEBDRIVER_CONFIG['use_local_driver']:
+            local_driver_path = self._get_local_driver_path()
+            if local_driver_path:
+                self.driver_path = local_driver_path
+                return local_driver_path
+        
+        # 2. 如果本地没有且允许自动下载，使用webdriver_manager
+        if WEBDRIVER_CONFIG['auto_download']:
+            return self._download_driver_with_manager()
+        
+        # 3. 最后尝试系统路径
+        return self._get_system_driver()
+    
+    def _get_local_driver_path(self):
+        """检查本地drivers目录中的ChromeDriver"""
         try:
-            # 设置缓存目录
-            cache_dir = os.path.join(os.getcwd(), 'webdriver_cache')
-            os.makedirs(cache_dir, exist_ok=True)
+            local_dir = os.path.join(os.getcwd(), WEBDRIVER_CONFIG['local_driver_dir'])
+            driver_file = WEBDRIVER_CONFIG['driver_filename']
+            local_driver_path = os.path.join(local_dir, driver_file)
             
-            # 使用webdriver_manager下载并缓存driver - 修正参数
-            self.logger.info("正在获取ChromeDriver...")
+            if os.path.exists(local_driver_path):
+                # 检查文件是否可执行
+                if os.access(local_driver_path, os.X_OK) or os.name == 'nt':  # Windows不需要执行权限检查
+                    self.logger.info(f"✅ 使用本地ChromeDriver: {local_driver_path}")
+                    return local_driver_path
+                else:
+                    self.logger.warning(f"本地ChromeDriver无执行权限: {local_driver_path}")
+            else:
+                self.logger.info(f"本地ChromeDriver不存在: {local_driver_path}")
+                
+        except Exception as e:
+            self.logger.warning(f"检查本地ChromeDriver失败: {e}")
+        
+        return None
+    
+    def _download_driver_with_manager(self):
+        """使用webdriver_manager下载ChromeDriver"""
+        try:
+            self.logger.info("⏬ 本地driver不存在，使用webdriver_manager下载...")
             # 使用默认配置，webdriver_manager会自动处理缓存
             manager = ChromeDriverManager()
             driver_path = manager.install()
             self.driver_path = driver_path
-            self.logger.info(f"ChromeDriver已缓存至: {driver_path}")
+            self.logger.info(f"✅ ChromeDriver已下载并缓存至: {driver_path}")
+            
+            # 尝试复制到本地drivers目录以备后用
+            self._copy_to_local_drivers(driver_path)
+            
             return driver_path
             
         except Exception as e:
-            self.logger.error(f"获取ChromeDriver失败: {e}")
-            # 尝试从环境变量或系统路径查找
-            try:
-                # 检查是否有系统安装的chromedriver
-                import shutil
-                system_driver = shutil.which('chromedriver')
-                if system_driver:
-                    self.logger.info(f"使用系统ChromeDriver: {system_driver}")
-                    return system_driver
-            except:
-                pass
-            
-            self.logger.warning("无法获取ChromeDriver，将尝试使用默认配置")
+            self.logger.error(f"❌ 下载ChromeDriver失败: {e}")
             return None
+    
+    def _copy_to_local_drivers(self, source_path):
+        """将下载的driver复制到本地drivers目录"""
+        try:
+            local_dir = os.path.join(os.getcwd(), WEBDRIVER_CONFIG['local_driver_dir'])
+            os.makedirs(local_dir, exist_ok=True)
+            
+            driver_file = WEBDRIVER_CONFIG['driver_filename']
+            local_path = os.path.join(local_dir, driver_file)
+            
+            import shutil
+            shutil.copy2(source_path, local_path)
+            self.logger.info(f"📥 已复制ChromeDriver到本地目录: {local_path}")
+            
+        except Exception as e:
+            self.logger.warning(f"复制ChromeDriver到本地目录失败: {e}")
+    
+    def _get_system_driver(self):
+        """尝试从系统路径获取ChromeDriver"""
+        try:
+            import shutil
+            system_driver = shutil.which('chromedriver')
+            if system_driver:
+                self.logger.info(f"✅ 使用系统ChromeDriver: {system_driver}")
+                return system_driver
+        except Exception as e:
+            self.logger.warning(f"查找系统ChromeDriver失败: {e}")
+        
+        self.logger.warning("❌ 无法获取ChromeDriver，将尝试使用默认配置")
+        return None
         
     def _setup_chrome_options(self):
         """配置Chrome选项以绕过反爬虫检测"""
@@ -491,6 +547,7 @@ class NFRACrawler:
         
         all_punishment_list = []
         current_page = 1
+        use_smart_check = False  # 这个方法不支持智能检查
         
         try:
             while current_page <= max_pages:

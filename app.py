@@ -15,7 +15,7 @@ def show_welcome():
     """显示欢迎界面"""
     print("=" * 60)
     print("        金融监管总局行政处罚信息爬虫")
-    print("              v2.3.0 专业版")
+    print("              v2.3.1 专业版")
     print("=" * 60)
     print()
     print("功能说明：")

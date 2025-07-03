@@ -2,9 +2,30 @@
 
 专业的国家金融监督管理总局行政处罚信息爬取工具，支持初始化下载和定期更新。
 
-## 🆕 最新更新 (v2.3.0)
+## 🆕 最新更新 (v2.3.1)
 
-### 新增功能
+### WebDriver优化
+- ⚡ **启动速度提升**：支持本地ChromeDriver缓存，避免每次启动时重新下载
+- 📁 **本地driver管理**：新增`drivers/`目录用于本地driver存储
+- 🛠️ **管理工具**：提供`setup_driver.py`脚本管理ChromeDriver
+- 🔧 **智能fallback**：本地driver → 自动下载 → 系统路径的智能选择机制
+- 🚀 **离线支持**：配置完成后支持离线运行
+
+### 使用本地ChromeDriver
+```bash
+# 一键设置本地ChromeDriver
+python setup_driver.py download
+
+# 检查ChromeDriver状态
+python setup_driver.py status
+
+# 测试ChromeDriver功能
+python setup_driver.py test
+```
+
+## 🔄 v2.3.0 更新内容
+
+### 类别选择功能
 - 🎯 **类别选择功能**：支持灵活选择要爬取的类别，大幅提升效率
 - 🚀 **性能优化**：优化等待时间和超时设置，页面处理速度提升60%+
 - 💡 **智能简写**：支持中文、英文、数字等多种简写方式
@@ -31,10 +52,28 @@
 - 📊 **超链接支持**：Excel中可直接点击查看原文
 - 📈 **统计分析**：自动生成数据统计和月度更新记录
 - 🔄 **断点续传**：支持WebDriver缓存，避免重复下载
+- 🚀 **快速启动**：支持本地ChromeDriver缓存，避免每次启动时重新下载
+- 🔧 **智能driver管理**：本地driver → 自动下载 → 系统路径的智能选择机制
 
 ## 🚗 快速开始
 
-### 方式一：使用启动脚本（推荐）
+### 步骤1：设置ChromeDriver（推荐）
+
+首次使用时，建议设置本地ChromeDriver以提升启动速度：
+
+```bash
+# 一键下载并设置ChromeDriver
+python setup_driver.py download
+
+# 检查设置状态
+python setup_driver.py status
+```
+
+完成设置后，程序启动时将直接使用本地driver，无需重新下载。
+
+### 步骤2：运行爬虫
+
+#### 方式一：使用启动脚本（推荐）
 
 ```bash
 python 运行脚本.py
@@ -182,6 +221,80 @@ excel_output/
 - 总计记录数
 - 月度新增记录数
 - 数据完整性统计
+
+## 🔧 WebDriver管理
+
+### 快速设置
+
+```bash
+# 一键设置本地ChromeDriver
+python setup_driver.py download
+
+# 检查当前状态
+python setup_driver.py status
+
+# 测试功能是否正常
+python setup_driver.py test
+
+# 清理本地driver（重新下载时使用）
+python setup_driver.py clean
+```
+
+### 工作原理
+
+1. **本地优先**：程序启动时首先检查`drivers/`目录中的ChromeDriver
+2. **自动下载**：如果本地没有，自动通过webdriver_manager下载
+3. **自动缓存**：下载完成后自动复制到本地目录备用
+4. **系统fallback**：如果都失败，尝试使用系统路径中的ChromeDriver
+
+### 配置说明
+
+在`config.py`中可以调整WebDriver相关设置：
+
+```python
+WEBDRIVER_CONFIG = {
+    'local_driver_dir': 'drivers',          # 本地driver存储目录
+    'driver_filename': 'chromedriver.exe',  # driver文件名
+    'use_local_driver': True,               # 优先使用本地driver
+    'auto_download': True,                  # 自动下载driver
+    'cache_valid_days': 7,                 # 缓存有效期（天）
+}
+```
+
+### 优势
+
+- ⚡ **启动速度**：避免每次启动时的网络下载，提升启动速度
+- 🔒 **稳定性**：减少网络问题导致的启动失败
+- 💾 **离线支持**：配置完成后支持离线运行
+- 🎯 **版本控制**：可以固定使用特定版本的ChromeDriver
+
+### 故障排除
+
+#### 问题1：driver版本不匹配
+```bash
+# 清理旧版本
+python setup_driver.py clean
+
+# 重新下载匹配的版本
+python setup_driver.py download
+```
+
+#### 问题2：权限问题（Linux/Mac）
+```bash
+# 设置执行权限
+chmod +x drivers/chromedriver
+```
+
+#### 问题3：测试失败
+```bash
+# 检查详细状态
+python setup_driver.py status
+
+# 清理并重新设置
+python setup_driver.py clean
+python setup_driver.py download
+python setup_driver.py test
+```
 
 ## 🔧 高级配置
 
