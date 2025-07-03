@@ -19,7 +19,14 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import random
 
-from config import BASE_URLS, SELENIUM_CONFIG, CRAWL_CONFIG, WEBDRIVER_CONFIG
+# 检测exe模式并导入相应配置
+if os.environ.get('NFRA_EXE_MODE') == '1':
+    # EXE模式：使用exe专用配置
+    from config_exe import BASE_URLS, SELENIUM_CONFIG, WEBDRIVER_CONFIG, CRAWL_CONFIG
+else:
+    # 正常模式：使用标准配置
+    from config import BASE_URLS, SELENIUM_CONFIG, CRAWL_CONFIG, WEBDRIVER_CONFIG
+
 from utils import setup_logging, clean_text, format_date, get_current_timestamp
 
 

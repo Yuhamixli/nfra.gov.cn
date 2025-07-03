@@ -1,243 +1,293 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PyInstaller打包脚本
-将金融监管总局爬虫打包成可执行文件
+EXE构建脚本
+自动化构建NFRA金融监管爬虫的exe应用程序
 """
 
 import os
 import sys
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
-def clean_build():
-    """清理之前的构建文件"""
-    print("🧹 清理构建目录...")
-    dirs_to_clean = ['build', 'dist', '__pycache__']
+def print_step(step_name, description):
+    """打印构建步骤"""
+    print("=" * 60)
+    print(f"🔧 {step_name}: {description}")
+    print("=" * 60)
+
+def check_requirements():
+    """检查构建环境"""
+    print_step("环境检查", "检查构建所需的依赖")
     
-    for dir_name in dirs_to_clean:
-        if os.path.exists(dir_name):
-            shutil.rmtree(dir_name)
-            print(f"   已删除: {dir_name}")
-
-def create_spec_file():
-    """创建PyInstaller规格文件"""
-    print("📝 创建打包配置...")
+    # 检查Python版本
+    python_version = sys.version_info
+    print(f"✅ Python版本: {python_version.major}.{python_version.minor}.{python_version.micro}")
     
-    spec_content = '''# -*- mode: python ; coding: utf-8 -*-
-
-block_cipher = None
-
-a = Analysis(
-    ['app.py'],
-    pathex=[],
-    binaries=[],
-    datas=[
-        ('README.md', '.'),
-        ('config.py', '.'),
-        ('crawler.py', '.'),
-        ('data_processor.py', '.'),
-        ('main.py', '.'),
-        ('utils.py', '.'),
-        ('运行脚本.py', '.'),
-        ('requirements.txt', '.'),
-    ],
-    hiddenimports=[
-        'selenium',
-        'bs4',
-        'pandas',
-        'openpyxl',
-        'lxml',
-        'webdriver_manager',
-        'schedule',
-        'requests',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='金融监管总局行政处罚信息爬虫',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=True,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=None,
-)
-'''
+    if python_version < (3, 8):
+        print("❌ 需要Python 3.8或更高版本")
+        return False
     
-    with open('nfra_crawler.spec', 'w', encoding='utf-8') as f:
-        f.write(spec_content)
-    print("   已创建: nfra_crawler.spec")
-
-def build_exe():
-    """执行打包"""
-    print("🔨 开始打包exe...")
+    # 检查PyInstaller
+    try:
+        import PyInstaller
+        print(f"✅ PyInstaller版本: {PyInstaller.__version__}")
+    except ImportError:
+        print("❌ 未安装PyInstaller，正在安装...")
+        subprocess.run([sys.executable, '-m', 'pip', 'install', 'pyinstaller'], check=True)
+        print("✅ PyInstaller安装完成")
     
-    cmd = [
-        'pyinstaller',
-        '--clean',
-        '--noconfirm', 
-        'nfra_crawler.spec'
+    # 检查关键依赖
+    required_packages = [
+        ('selenium', 'selenium'),
+        ('webdriver_manager', 'webdriver_manager'),
+        ('beautifulsoup4', 'bs4'),
+        ('pandas', 'pandas'),
+        ('openpyxl', 'openpyxl'),
+        ('lxml', 'lxml')
     ]
     
-    print(f"   执行命令: {' '.join(cmd)}")
+    missing_packages = []
+    for package_name, import_name in required_packages:
+        try:
+            __import__(import_name)
+            print(f"✅ {package_name}")
+        except ImportError:
+            missing_packages.append(package_name)
+            print(f"❌ {package_name}")
     
-    try:
-        result = subprocess.run(cmd, check=True)
-        print("✅ 打包成功！")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ 打包失败: {e}")
+    if missing_packages:
+        print(f"❌ 缺少依赖包: {', '.join(missing_packages)}")
+        print("请运行: pip install -r requirements.txt")
         return False
-
-def copy_additional_files():
-    """复制额外需要的文件"""
-    print("📋 复制附加文件...")
-    
-    dist_dir = Path('dist')
-    if not dist_dir.exists():
-        print("❌ dist目录不存在")
-        return False
-    
-    # 创建输出目录
-    output_dirs = ['excel_output', 'text_output']
-    for dir_name in output_dirs:
-        output_dir = dist_dir / dir_name
-        output_dir.mkdir(exist_ok=True)
-        print(f"   已创建: {dir_name}")
-    
-    # 复制运行脚本
-    scripts = ['run_daily.bat']
-    for script in scripts:
-        if os.path.exists(script):
-            shutil.copy2(script, dist_dir)
-            print(f"   已复制: {script}")
     
     return True
 
-def create_usage_guide():
-    """创建使用说明"""
-    print("📖 创建使用说明...")
+def clean_build_dirs():
+    """清理构建目录"""
+    print_step("清理构建", "清理之前的构建文件")
     
-    guide_content = """# 金融监管总局行政处罚信息爬虫 - 使用说明
-
-## 快速开始
-
-### 方法一：双击运行exe文件
-1. 双击 `金融监管总局行政处罚信息爬虫.exe`
-2. 根据菜单选择运行模式
-3. 等待程序完成
-
-### 方法二：命令行运行  
-```cmd
-金融监管总局行政处罚信息爬虫.exe
-```
-
-## 运行模式说明
-
-- **初始化模式**：首次使用，下载2025年全部数据（2-4小时）
-- **月度更新**：定期获取最近45天新数据（20-40分钟）
-- **每日更新**：获取昨天发布的新数据（2-5分钟）
-- **测试模式**：快速测试程序功能（5-10分钟）
-
-## 输出文件
-
-程序运行后会在以下目录生成Excel文件：
-- `excel_output/` - Excel数据文件
-- `text_output/` - 文本数据文件（测试模式）
-
-## 注意事项
-
-1. **首次运行**：选择初始化模式建立数据库
-2. **网络要求**：需要稳定的网络连接
-3. **浏览器**：需要安装Chrome浏览器
-4. **运行时间**：初始化模式需要较长时间，请耐心等待
-5. **防火墙**：程序需要访问网络，请允许防火墙通过
-
-## 故障排除
-
-- **WebDriver错误**：确保Chrome浏览器已安装
-- **网络超时**：检查网络连接，重新运行即可
-- **文件无法保存**：检查磁盘空间，关闭已打开的Excel文件
-
-## 技术支持
-
-如遇问题请查看完整文档 `README.md` 或联系开发者。
-"""
+    dirs_to_clean = ['build', 'dist', '__pycache__']
+    files_to_clean = ['*.pyc', '*.pyo']
     
-    with open('dist/使用说明.txt', 'w', encoding='utf-8') as f:
-        f.write(guide_content)
-    print("   已创建: 使用说明.txt")
+    for dir_name in dirs_to_clean:
+        if os.path.exists(dir_name):
+            print(f"🗑️ 删除目录: {dir_name}")
+            shutil.rmtree(dir_name)
+    
+    # 清理Python缓存文件
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if file.endswith(('.pyc', '.pyo')):
+                file_path = os.path.join(root, file)
+                print(f"🗑️ 删除文件: {file_path}")
+                os.remove(file_path)
+        
+        # 删除__pycache__目录
+        if '__pycache__' in dirs:
+            cache_path = os.path.join(root, '__pycache__')
+            print(f"🗑️ 删除缓存: {cache_path}")
+            shutil.rmtree(cache_path)
+            dirs.remove('__pycache__')
 
-def main():
-    """主函数"""
-    print("🚀 开始构建可执行文件...")
-    print()
+def setup_chromedriver():
+    """设置ChromeDriver"""
+    print_step("ChromeDriver设置", "确保ChromeDriver可用")
     
     try:
-        # 1. 清理构建文件
-        clean_build()
-        print()
+        # 运行setup_driver.py来设置ChromeDriver
+        result = subprocess.run([sys.executable, 'setup_driver.py', 'download'], 
+                              capture_output=True, text=True)
         
-        # 2. 创建规格文件
-        create_spec_file()
-        print()
+        if result.returncode == 0:
+            print("✅ ChromeDriver设置成功")
+            return True
+        else:
+            print(f"⚠️ ChromeDriver设置可能有问题: {result.stderr}")
+            return True  # 继续构建，因为exe可以在运行时下载
+            
+    except Exception as e:
+        print(f"⚠️ ChromeDriver设置失败: {e}")
+        return True  # 继续构建
+
+def build_exe():
+    """构建exe文件"""
+    print_step("构建EXE", "使用PyInstaller构建可执行文件")
+    
+    # 构建命令
+    cmd = [
+        sys.executable, '-m', 'PyInstaller',
+        '--clean',  # 清理缓存
+        '--noconfirm',  # 不询问覆盖
+        'nfra_crawler.spec'
+    ]
+    
+    print(f"🔧 构建命令: {' '.join(cmd)}")
+    print("⏳ 开始构建，这可能需要几分钟...")
+    
+    start_time = time.time()
+    
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         
-        # 3. 执行打包
-        if not build_exe():
-            return False
-        print()
-        
-        # 4. 复制附加文件
-        if not copy_additional_files():
-            return False
-        print()
-        
-        # 5. 创建使用说明
-        create_usage_guide()
-        print()
-        
-        print("🎉 构建完成！")
-        print(f"📁 可执行文件位于: dist/金融监管总局行政处罚信息爬虫.exe")
-        print(f"📋 使用说明位于: dist/使用说明.txt")
-        print()
-        print("💡 提示：首次运行请选择初始化模式")
+        build_time = time.time() - start_time
+        print(f"✅ 构建成功！耗时: {build_time:.1f}秒")
+        print("📁 输出文件位置: dist/NFRA金融监管爬虫.exe")
         
         return True
         
+    except subprocess.CalledProcessError as e:
+        print(f"❌ 构建失败:")
+        print(f"返回码: {e.returncode}")
+        print(f"错误输出: {e.stderr}")
+        return False
+
+def create_release_package():
+    """创建发布包"""
+    print_step("创建发布包", "准备最终的发布文件")
+    
+    release_dir = Path('release')
+    
+    # 清理并创建发布目录
+    if release_dir.exists():
+        shutil.rmtree(release_dir)
+    
+    release_dir.mkdir()
+    
+    # 复制exe文件
+    exe_file = Path('dist/NFRA金融监管爬虫.exe')
+    if exe_file.exists():
+        shutil.copy2(exe_file, release_dir / 'NFRA金融监管爬虫.exe')
+        print(f"✅ 复制exe文件: {exe_file}")
+    else:
+        print(f"❌ 找不到exe文件: {exe_file}")
+        return False
+    
+    # 创建必要的目录结构
+    dirs_to_create = ['excel_output', 'text_output', 'logs', 'drivers']
+    for dir_name in dirs_to_create:
+        (release_dir / dir_name).mkdir()
+        print(f"📁 创建目录: {dir_name}")
+    
+    # 复制说明文件
+    docs_to_copy = [
+        ('README.md', '使用说明.md'),
+        ('WEB界面使用说明.md', 'WEB界面使用说明.md'),
+        ('drivers/README.md', 'drivers/README.md'),
+    ]
+    
+    for src, dst in docs_to_copy:
+        src_path = Path(src)
+        if src_path.exists():
+            dst_path = release_dir / dst
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, dst_path)
+            print(f"📄 复制文档: {src} -> {dst}")
+    
+    # 创建快速启动说明
+    quick_start = release_dir / '快速开始.txt'
+    with open(quick_start, 'w', encoding='utf-8') as f:
+        f.write("""🚀 NFRA金融监管爬虫 - 快速开始
+
+1. 双击运行 "NFRA金融监管爬虫.exe"
+
+2. 首次使用建议：
+   - 选择 "7. WebDriver设置" -> "2. 下载设置" 来配置ChromeDriver
+   - 选择 "4. 测试模式" 验证程序功能
+
+3. 正常使用：
+   - 选择 "1. 初始化模式" 下载全部数据（首次使用）
+   - 选择 "2. 月度更新模式" 获取最新数据（日常使用）
+   - 选择 "5. 自定义爬取" 进行灵活配置
+
+4. 输出文件：
+   - Excel文件: excel_output/ 目录
+   - 文本文件: text_output/ 目录
+
+5. 注意事项：
+   - 请确保网络连接正常
+   - 程序运行时会显示浏览器窗口，属正常现象
+   - 如遇问题请查看 "使用说明.md"
+
+版本: v2.3.1 EXE版
+更新时间: 2025-01-03
+""")
+    print("📄 创建快速启动说明")
+    
+    print(f"✅ 发布包创建完成: {release_dir}")
+    
+    # 显示文件大小
+    exe_size = exe_file.stat().st_size / 1024 / 1024
+    print(f"📊 exe文件大小: {exe_size:.1f} MB")
+    
+    return True
+
+def test_exe():
+    """测试exe文件"""
+    print_step("测试EXE", "验证exe文件是否正常工作")
+    
+    exe_file = Path('release/NFRA金融监管爬虫.exe')
+    
+    if not exe_file.exists():
+        print(f"❌ 找不到exe文件: {exe_file}")
+        return False
+    
+    print("⚠️ 手动测试提示:")
+    print("1. 进入release目录")
+    print("2. 双击运行 'NFRA金融监管爬虫.exe'")
+    print("3. 验证程序能否正常启动并显示菜单")
+    print("4. 建议测试WebDriver设置和测试模式功能")
+    
+    return True
+
+def main():
+    """主构建流程"""
+    print("🚀 NFRA金融监管爬虫 - EXE构建工具")
+    print("=" * 60)
+    
+    try:
+        # 1. 环境检查
+        if not check_requirements():
+            print("❌ 环境检查失败，请解决依赖问题后重试")
+            return False
+        
+        # 2. 清理构建目录
+        clean_build_dirs()
+        
+        # 3. 设置ChromeDriver
+        setup_chromedriver()
+        
+        # 4. 构建exe
+        if not build_exe():
+            print("❌ 构建失败")
+            return False
+        
+        # 5. 创建发布包
+        if not create_release_package():
+            print("❌ 创建发布包失败")
+            return False
+        
+        # 6. 测试提示
+        test_exe()
+        
+        print("\n" + "=" * 60)
+        print("🎉 构建完成！")
+        print("📁 发布文件位置: release/")
+        print("📄 快速启动: release/NFRA金融监管爬虫.exe")
+        print("=" * 60)
+        
+        return True
+        
+    except KeyboardInterrupt:
+        print("\n❌ 用户中断构建")
+        return False
     except Exception as e:
-        print(f"❌ 构建失败: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"\n❌ 构建过程出错: {e}")
         return False
 
 if __name__ == "__main__":
     success = main()
-    
     if not success:
-        input("按 Enter 键退出...")
         sys.exit(1) 

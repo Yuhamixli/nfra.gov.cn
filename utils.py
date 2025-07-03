@@ -7,7 +7,14 @@ import logging
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
-from config import LOG_CONFIG, OUTPUT_CONFIG
+
+# 检测exe模式并导入相应配置
+if os.environ.get('NFRA_EXE_MODE') == '1':
+    # EXE模式：使用exe专用配置
+    from config_exe import LOGGING_CONFIG as LOG_CONFIG, OUTPUT_CONFIG
+else:
+    # 正常模式：使用标准配置
+    from config import LOG_CONFIG, OUTPUT_CONFIG
 
 
 def setup_logging():

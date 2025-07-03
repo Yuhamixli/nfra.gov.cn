@@ -13,10 +13,43 @@ from datetime import datetime, timedelta
 import logging
 from calendar import monthrange
 
+import os
+
+# 检测exe模式并导入相应配置
+if os.environ.get('NFRA_EXE_MODE') == '1':
+    # EXE模式：使用exe专用配置
+    from config_exe import SELENIUM_CONFIG, OUTPUT_CONFIG, BASE_URLS
+    # 为了兼容性，创建EXE模式的RUN_MODES和SCHEDULE_CONFIG
+    RUN_MODES = {
+        'test': {
+            'description': '测试模式 - 每类5条记录',
+            'max_pages_per_category': 1,
+            'max_records_per_category': 5
+        },
+        'init': {
+            'description': '初始化模式 - 2025年全部数据',
+            'max_pages_per_category': 50,
+            'max_records_per_category': None
+        },
+        'monthly': {
+            'description': '月度更新模式 - 上个月数据',
+            'max_pages_per_category': 10,
+            'max_records_per_category': None
+        },
+        'daily': {
+            'description': '每日更新模式 - 昨天数据',
+            'max_pages_per_category': 3,
+            'max_records_per_category': None
+        }
+    }
+    SCHEDULE_CONFIG = {'enabled': False}  # EXE模式不需要定时任务
+else:
+    # 正常模式：使用标准配置
+    from config import SCHEDULE_CONFIG, OUTPUT_CONFIG, SELENIUM_CONFIG, RUN_MODES, BASE_URLS
+
 from crawler import NFRACrawler
 from data_processor import DataProcessor, process_and_save_data
 from utils import setup_logging, load_existing_data, merge_data
-from config import SCHEDULE_CONFIG, OUTPUT_CONFIG, SELENIUM_CONFIG, RUN_MODES, BASE_URLS
 
 
 def get_available_categories():

@@ -14,7 +14,12 @@ from pathlib import Path
 # 添加项目路径以便导入配置
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import WEBDRIVER_CONFIG
+# 检测exe模式并导入相应配置
+if os.environ.get('NFRA_EXE_MODE') == '1':
+    from config_exe import WEBDRIVER_CONFIG
+else:
+    from config import WEBDRIVER_CONFIG
+
 from utils import setup_logging
 
 def check_chrome_version():
@@ -46,7 +51,7 @@ def check_chrome_version():
 
 def download_chromedriver():
     """下载ChromeDriver"""
-    print("🔍 正在检查Chrome浏览器...")
+    print("[检查] 正在检查Chrome浏览器...")
     chrome_version = check_chrome_version()
     
     if not chrome_version:
@@ -189,7 +194,7 @@ def show_status():
 
 def main():
     """主函数"""
-    print("🔧 ChromeDriver 设置工具")
+    print("[工具] ChromeDriver 设置工具")
     print("=" * 60)
     
     if len(sys.argv) > 1:
